@@ -7,17 +7,39 @@ from openpyxl.styles import PatternFill
 
 
 class Event:
-    def __init__(self, url: str, class_name):
+    def __init__(self, url: str):
         self.url = url
-        self.class_name = class_name
+        self.class_name = ""
+
+    @property
+    def general_url(self):
+        return self.get_general_url(self.event_id)
 
     @property
     def event_id(self):
         return self.get_event_id()
 
     @property
+    def event_name(self):
+        return self.get_event_details(self.general_url)['eventName']
+
+    @property
+    def event_start_date(self):
+        return self.get_event_details(self.general_url)['startDate']
+
+    @property
+    def event_end_date(self):
+        return self.get_event_details(self.general_url)['endDate']
+
+    @property
     def class_id(self):
-        return self.get_class_id(self.get_class_ids(self.url), self.class_name)
+        general_url = self.get_general_url(self.event_id)
+        class_ids = self.get_class_ids(general_url)
+        return self.get_class_id(class_ids, self.class_name)
+
+    @property
+    def class_names(self) -> List[str]:
+        return [x[0] for x in self.get_class_ids(self.general_url)]
 
     @property
     def results(self):
@@ -25,6 +47,10 @@ class Event:
 
     def get_event_id(self) -> str:
         return self.url[self.url.index("event/") + 6:]
+
+    @staticmethod
+    def get_general_url(event_id: str) -> str:
+        return f"https://www.manage2sail.com/en-EN/event/{event_id}"
 
     @staticmethod
     def get_class_ids(html_url: str) -> List:
@@ -41,11 +67,20 @@ class Event:
                 classes.append(_class.find("td").text)
 
         for url in results:
-            if url.find("i").get('title') == "Klasse heeft uitslagen":
+            if url.find("i").get('title') == "Class has results":
                 found_url = url.get('href')
                 ids.append(found_url[found_url.index("classId")+8:])
 
         return list(zip(classes, ids))
+
+    @staticmethod
+    def get_event_details(html_url: str):
+        details = {}
+        web_contents = urllib.request.urlopen(html_url).read()
+        soup = BeautifulSoup(web_contents, 'xml')
+        details['eventName'] = soup.find("div", {"class": "eventName"}).find("h1").text
+        details['startDate'], details['endDate'] = soup.find("span", {"class": "eventDates"}).text.split(" - ")
+        return details
 
     @staticmethod
     def get_class_id(class_ids: List, class_name: str) -> str:
@@ -79,6 +114,7 @@ class Event:
     def export_to_excel(self):
         workbook = Workbook()
         sheet = workbook.active
+        sheet.title = self.class_name
         sheet["B1"] = "Sailnumber"
         sheet["C1"] = "Name"
         for index, race in enumerate(self.results[0]['scores']):
@@ -93,12 +129,20 @@ class Event:
                 if score['discard'] is True:
                     sheet.cell(row=2 + row, column=4 + race).fill = PatternFill("solid", start_color="ff0000")
 
-        workbook.save(filename="hello_world.xlsx")
+        workbook.save(filename=f"{self.event_name}.xlsx")
 
 
 if __name__ == "__main__":
     URL = "https://www.manage2sail.com/nl-NL/event/e5252026-b2c5-4d0a-a077-6bd50d69e55b"
-    U4Workum = Event(URL, 'Optimist')
+
+    U4Workum = Event(URL)
+    print(U4Workum.event_id)
+    print(U4Workum.general_url)
+    print(U4Workum.event_name)
+    print(U4Workum.event_start_date)
+    print(U4Workum.event_end_date)
+    print(U4Workum.class_names)
+    U4Workum.class_name = 'Optimist'
     U4Workum.export_to_excel()
 
     print(U4Workum.data_dump())
